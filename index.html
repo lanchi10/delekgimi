@@ -1,432 +1,301 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from 'firebase/firestore';
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FuelTracker IL</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
 
-// Global variables provided by the Canvas environment
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .input-field {
+            @apply w-full p-3 mb-4 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 text-right;
+        }
+        .btn-primary {
+            @apply w-full bg-blue-600 text-white py-3 px-4 rounded-lg shadow-md hover:bg-blue-700 transition duration-300 ease-in-out font-semibold;
+        }
+        .btn-secondary {
+            @apply w-full bg-gray-200 text-gray-800 py-3 px-4 rounded-lg shadow-md hover:bg-gray-300 transition duration-300 ease-in-out font-semibold;
+        }
+        .nav-btn {
+            @apply flex-1 py-3 text-center font-semibold rounded-lg transition duration-300 ease-in-out;
+        }
+        .nav-btn.active {
+            @apply bg-blue-600 text-white shadow-md;
+        }
+        .nav-btn:not(.active) {
+            @apply bg-gray-200 text-gray-700 hover:bg-gray-300;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-4">
 
-// Main App Component
-const App = () => {
-    const [currentPage, setCurrentPage] = useState('entry'); // 'entry', 'statistics', 'settings'
-    const [odometer, setOdometer] = useState('');
-    const [liters, setLiters] = useState('');
-    const [cost, setCost] = useState('');
-    const [fuelEntries, setFuelEntries] = useState([]);
-    const [db, setDb] = useState(null);
-    const [auth, setAuth] = useState(null);
-    const [userId, setUserId] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [message, setMessage] = useState('');
+<div id="root"></div>
 
-    // Initialize Firebase and authenticate
-    useEffect(() => {
-        const initFirebase = async () => {
-            try {
-                const app = initializeApp(firebaseConfig);
-                const firestoreDb = getFirestore(app);
-                const firebaseAuth = getAuth(app);
+<script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+    
+    // ⚠️ החלף את פרטי התצורה כאן בפרטים של פרויקט Firebase שלך
+    const firebaseConfig = {
+        apiKey: "YOUR_API_KEY",
+        authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+        projectId: "YOUR_PROJECT_ID",
+        storageBucket: "YOUR_PROJECT_ID.appspot.com",
+        messagingSenderId: "YOUR_SENDER_ID",
+        appId: "YOUR_APP_ID"
+    };
 
-                setDb(firestoreDb);
-                setAuth(firebaseAuth);
+    const App = () => {
+        const [currentPage, setCurrentPage] = useState('entry');
+        const [odometer, setOdometer] = useState('');
+        const [liters, setLiters] = useState('');
+        const [cost, setCost] = useState('');
+        const [fuelEntries, setFuelEntries] = useState([]);
+        const [db, setDb] = useState(null);
+        const [userId, setUserId] = useState(null);
+        const [loading, setLoading] = useState(true);
+        const [message, setMessage] = useState('');
 
-                // Sign in with custom token or anonymously
-                if (initialAuthToken) {
-                    await signInWithCustomToken(firebaseAuth, initialAuthToken);
-                } else {
-                    await signInAnonymously(firebaseAuth);
-                }
+        useEffect(() => {
+            const initFirebase = async () => {
+                try {
+                    const app = firebase.initializeApp(firebaseConfig);
+                    const firestoreDb = firebase.firestore();
+                    const firebaseAuth = firebase.auth();
+                    
+                    setDb(firestoreDb);
 
-                onAuthStateChanged(firebaseAuth, (user) => {
-                    if (user) {
-                        setUserId(user.uid);
-                        console.log("User ID:", user.uid);
-                    } else {
-                        // If for some reason user is not authenticated, generate a random ID
-                        setUserId(crypto.randomUUID());
-                        console.log("Signed in anonymously, User ID:", userId);
-                    }
+                    await firebaseAuth.signInAnonymously();
+                    firebaseAuth.onAuthStateChanged((user) => {
+                        if (user) {
+                            setUserId(user.uid);
+                        } else {
+                            setUserId(crypto.randomUUID());
+                        }
+                        setLoading(false);
+                    });
+                } catch (error) {
+                    console.error("Error initializing Firebase:", error);
+                    setMessage(`שגיאה באתחול Firebase: ${error.message}`);
                     setLoading(false);
+                }
+            };
+            initFirebase();
+        }, []);
+
+        useEffect(() => {
+            if (db && userId) {
+                const fuelEntriesRef = db.collection(`users/${userId}/fuelEntries`).orderBy('timestamp', 'desc');
+                const unsubscribe = fuelEntriesRef.onSnapshot((snapshot) => {
+                    const entries = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+                    setFuelEntries(entries);
+                }, (error) => {
+                    console.error("Error fetching fuel entries:", error);
+                    setMessage(`שגיאה בטעינת נתוני דלק: ${error.message}`);
                 });
-            } catch (error) {
-                console.error("Error initializing Firebase:", error);
-                setMessage(`שגיאה באתחול Firebase: ${error.message}`);
-                setLoading(false);
+                return () => unsubscribe();
+            }
+        }, [db, userId]);
+
+        const showMessage = (msg) => {
+            setMessage(msg);
+            setTimeout(() => setMessage(''), 3000);
+        };
+
+        const handleSaveEntry = async () => {
+            if (!odometer || !liters || !cost) {
+                showMessage('אנא מלא את כל השדות.');
+                return;
+            }
+            if (isNaN(odometer) || isNaN(liters) || isNaN(cost)) {
+                showMessage('אנא הזן מספרים חוקיים בשדות.');
+                return;
+            }
+            try {
+                await db.collection(`users/${userId}/fuelEntries`).add({
+                    odometer: parseFloat(odometer),
+                    liters: parseFloat(liters),
+                    cost: parseFloat(cost),
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                });
+                showMessage('נתוני הדלק נשמרו בהצלחה!');
+                setOdometer('');
+                setLiters('');
+                setCost('');
+            } catch (e) {
+                console.error("Error adding document: ", e);
+                showMessage(`שגיאה בשמירת הנתונים: ${e.message}`);
             }
         };
-        initFirebase();
-    }, []);
 
-    // Fetch fuel entries in real-time
-    useEffect(() => {
-        if (db && userId) {
-            const fuelEntriesCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/fuelEntries`);
-            // Note: orderBy is commented out as per instructions to avoid index issues.
-            // Data will be sorted in memory if needed.
-            const q = fuelEntriesCollectionRef; // query(fuelEntriesCollectionRef, orderBy('timestamp', 'desc'));
-
-            const unsubscribe = onSnapshot(q, (snapshot) => {
-                const entries = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                }));
-                // Sort entries by timestamp in descending order in memory
-                entries.sort((a, b) => b.timestamp - a.timestamp);
-                setFuelEntries(entries);
-            }, (error) => {
-                console.error("Error fetching fuel entries:", error);
-                setMessage(`שגיאה בטעינת נתוני דלק: ${error.message}`);
-            });
-
-            return () => unsubscribe(); // Cleanup listener on unmount
-        }
-    }, [db, userId]);
-
-    const showMessage = (msg, type = 'success') => {
-        setMessage(msg);
-        setTimeout(() => setMessage(''), 3000); // Clear message after 3 seconds
-    };
-
-    const handleSaveEntry = async () => {
-        if (!odometer || !liters || !cost) {
-            showMessage('אנא מלא את כל השדות.', 'error');
-            return;
-        }
-        if (isNaN(odometer) || isNaN(liters) || isNaN(cost)) {
-            showMessage('אנא הזן מספרים חוקיים בשדות.', 'error');
-            return;
-        }
-
-        try {
-            const fuelEntriesCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/fuelEntries`);
-            await addDoc(fuelEntriesCollectionRef, {
-                odometer: parseFloat(odometer),
-                liters: parseFloat(liters),
-                cost: parseFloat(cost),
-                timestamp: Date.now(), // Use Date.now() for consistent sorting
-            });
-            showMessage('נתוני הדלק נשמרו בהצלחה!');
-            // Clear form
-            setOdometer('');
-            setLiters('');
-            setCost('');
-        } catch (e) {
-            console.error("Error adding document: ", e);
-            showMessage(`שגיאה בשמירת הנתונים: ${e.message}`, 'error');
-        }
-    };
-
-    // Simulate OCR data extraction
-    const simulateOcr = (type) => {
-        if (type === 'odometer') {
-            setOdometer((Math.floor(Math.random() * 100000) + 100000).toString()); // Random 6-digit odometer
-            showMessage('קריאת מד מרחק שולפה (סימולציה).');
-        } else if (type === 'pump') {
-            setLiters((Math.random() * 50 + 10).toFixed(2)); // Random liters between 10-60
-            setCost((Math.random() * 300 + 50).toFixed(2)); // Random cost between 50-350 ILS
-            showMessage('נתוני משאבת דלק שולפו (סימולציה).');
-        }
-    };
-
-    // Calculate statistics
-    const calculateStatistics = useCallback(() => {
-        if (fuelEntries.length < 2) {
-            return {
-                avgConsumption: 'אין מספיק נתונים',
-                totalCost: 'אין מספיק נתונים',
-                costPerKm: 'אין מספיק נתונים',
-                monthlySummary: {}
-            };
-        }
-
-        let totalLiters = 0;
-        let totalCost = 0;
-        let totalDistance = 0;
-        const monthlySummary = {};
-
-        // Sort entries by odometer for accurate consumption calculation
-        const sortedEntries = [...fuelEntries].sort((a, b) => a.odometer - b.odometer);
-
-        for (let i = 0; i < sortedEntries.length; i++) {
-            const entry = sortedEntries[i];
-            totalLiters += entry.liters;
-            totalCost += entry.cost;
-
-            const date = new Date(entry.timestamp);
-            const monthYear = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
-            if (!monthlySummary[monthYear]) {
-                monthlySummary[monthYear] = { liters: 0, cost: 0, distance: 0, entries: [] };
+        const simulateOcr = (type) => {
+            if (type === 'odometer') {
+                setOdometer((Math.floor(Math.random() * 100000) + 100000).toString());
+                showMessage('קריאת מד מרחק שולפה (סימולציה).');
+            } else if (type === 'pump') {
+                setLiters((Math.random() * 50 + 10).toFixed(2));
+                setCost((Math.random() * 300 + 50).toFixed(2));
+                showMessage('נתוני משאבת דלק שולפו (סימולציה).');
             }
-            monthlySummary[monthYear].liters += entry.liters;
-            monthlySummary[monthYear].cost += entry.cost;
-            monthlySummary[monthYear].entries.push(entry);
+        };
 
-            if (i > 0) {
-                const prevEntry = sortedEntries[i - 1];
-                const distance = entry.odometer - prevEntry.odometer;
-                if (distance > 0) { // Ensure positive distance
-                    totalDistance += distance;
-                    monthlySummary[monthYear].distance += distance;
+        const calculateStatistics = useCallback(() => {
+            if (fuelEntries.length < 2) {
+                return {
+                    avgConsumption: 'אין מספיק נתונים',
+                    totalCost: 'אין מספיק נתונים',
+                    costPerKm: 'אין מספיק נתונים',
+                    monthlySummary: {}
+                };
+            }
+            let totalLiters = 0;
+            let totalCost = 0;
+            let totalDistance = 0;
+            const monthlySummary = {};
+            const sortedEntries = [...fuelEntries].sort((a, b) => a.odometer - b.odometer);
+            for (let i = 0; i < sortedEntries.length; i++) {
+                const entry = sortedEntries[i];
+                totalLiters += entry.liters;
+                totalCost += entry.cost;
+                const date = entry.timestamp ? new Date(entry.timestamp.seconds * 1000) : new Date();
+                const monthYear = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+                if (!monthlySummary[monthYear]) {
+                    monthlySummary[monthYear] = { liters: 0, cost: 0, distance: 0, entries: [] };
+                }
+                monthlySummary[monthYear].liters += entry.liters;
+                monthlySummary[monthYear].cost += entry.cost;
+                monthlySummary[monthYear].entries.push(entry);
+                if (i > 0) {
+                    const prevEntry = sortedEntries[i - 1];
+                    const distance = entry.odometer - prevEntry.odometer;
+                    if (distance > 0) {
+                        totalDistance += distance;
+                        monthlySummary[monthYear].distance += distance;
+                    }
                 }
             }
+            let avgConsumption = 'N/A';
+            if (totalDistance > 0) {
+                avgConsumption = ((totalLiters / totalDistance) * 100).toFixed(2);
+            }
+            let costPerKm = 'N/A';
+            if (totalDistance > 0) {
+                costPerKm = (totalCost / totalDistance).toFixed(2);
+            }
+            return {
+                avgConsumption: avgConsumption !== 'N/A' ? `${avgConsumption} ליטר/100 ק"מ` : avgConsumption,
+                totalCost: `${totalCost.toFixed(2)} ש"ח`,
+                costPerKm: costPerKm !== 'N/A' ? `${costPerKm} ש"ח/ק"מ` : costPerKm,
+                monthlySummary
+            };
+        }, [fuelEntries]);
+
+        const stats = calculateStatistics();
+
+        if (loading) {
+            return (
+                <div className="flex items-center justify-center min-h-screen bg-gray-100 text-gray-700">
+                    <p>טוען את האפליקציה...</p>
+                </div>
+            );
         }
 
-        let avgConsumption = 'N/A';
-        if (totalDistance > 0) {
-            avgConsumption = ((totalLiters / totalDistance) * 100).toFixed(2);
-        }
-
-        let costPerKm = 'N/A';
-        if (totalDistance > 0) {
-            costPerKm = (totalCost / totalDistance).toFixed(2);
-        }
-
-        return {
-            avgConsumption: avgConsumption !== 'N/A' ? `${avgConsumption} ליטר/100 ק"מ` : avgConsumption,
-            totalCost: `${totalCost.toFixed(2)} ש"ח`,
-            costPerKm: costPerKm !== 'N/A' ? `${costPerKm} ש"ח/ק"מ` : costPerKm,
-            monthlySummary
-        };
-    }, [fuelEntries]);
-
-    const stats = calculateStatistics();
-
-    if (loading) {
         return (
-            <div dir="rtl" className="flex items-center justify-center min-h-screen bg-gray-100 text-gray-700">
-                <p>טוען את האפליקציה...</p>
+            <div className="min-h-screen bg-gray-100 flex flex-col items-center p-4">
+                <div className="w-full max-w-md bg-white rounded-xl shadow-lg p-6 mb-6">
+                    <h1 className="text-3xl font-bold text-center text-blue-700 mb-6">FuelTracker IL</h1>
+                    {message && (
+                        <div className={`p-3 mb-4 rounded-lg text-center ${message.includes('שגיאה') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                            {message}
+                        </div>
+                    )}
+                    <div className="flex justify-around bg-gray-100 rounded-lg p-2 mb-6 shadow-inner">
+                        <button className={`nav-btn ${currentPage === 'entry' ? 'active' : ''}`} onClick={() => setCurrentPage('entry')}>הזנת דלק</button>
+                        <button className={`nav-btn ${currentPage === 'statistics' ? 'active' : ''}`} onClick={() => setCurrentPage('statistics')}>סטטיסטיקות</button>
+                        <button className={`nav-btn ${currentPage === 'settings' ? 'active' : ''}`} onClick={() => setCurrentPage('settings')}>הגדרות</button>
+                    </div>
+
+                    {currentPage === 'entry' && (
+                        <div className="animate-fade-in">
+                            <h2 className="text-2xl font-semibold text-gray-800 mb-5 text-center">הזנת תדלוק חדש</h2>
+                            <div className="mb-4">
+                                <label htmlFor="odometer" className="block text-gray-700 text-sm font-medium mb-2">קריאת מד מרחק (ק"מ)</label>
+                                <input type="number" id="odometer" className="input-field" value={odometer} onChange={(e) => setOdometer(e.target.value)} placeholder="לדוגמה: 123456" min="0" />
+                                <button onClick={() => simulateOcr('odometer')} className="btn-secondary text-sm mb-4">סרוק תמונת מד מרחק (סימולציה)</button>
+                            </div>
+                            <div className="mb-4">
+                                <label htmlFor="liters" className="block text-gray-700 text-sm font-medium mb-2">כמות דלק (ליטרים)</label>
+                                <input type="number" id="liters" className="input-field" value={liters} onChange={(e) => setLiters(e.target.value)} placeholder="לדוגמה: 45.50" step="0.01" min="0" />
+                            </div>
+                            <div className="mb-6">
+                                <label htmlFor="cost" className="block text-gray-700 text-sm font-medium mb-2">עלות כוללת (ש"ח)</label>
+                                <input type="number" id="cost" className="input-field" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="לדוגמה: 320.75" step="0.01" min="0" />
+                                <button onClick={() => simulateOcr('pump')} className="btn-secondary text-sm">סרוק תמונת משאבה (סימולציה)</button>
+                            </div>
+                            <button onClick={handleSaveEntry} className="btn-primary">שמור תדלוק</button>
+                        </div>
+                    )}
+
+                    {currentPage === 'statistics' && (
+                        <div className="animate-fade-in">
+                            <h2 className="text-2xl font-semibold text-gray-800 mb-5 text-center">סטטיסטיקות צריכת דלק</h2>
+                            <div className="bg-blue-50 p-4 rounded-lg mb-4 shadow-sm">
+                                <p className="text-lg font-medium text-blue-800 mb-2">צריכה ממוצעת: <span className="font-bold">{stats.avgConsumption}</span></p>
+                                <p className="text-lg font-medium text-blue-800 mb-2">עלות כוללת: <span className="font-bold">{stats.totalCost}</span></p>
+                                <p className="text-lg font-medium text-blue-800">עלות לק"מ: <span className="font-bold">{stats.costPerKm}</span></p>
+                            </div>
+                            <h3 className="text-xl font-semibold text-gray-800 mb-3">היסטוריית תדלוקים</h3>
+                            {fuelEntries.length === 0 ? (
+                                <p className="text-gray-600 text-center">עדיין אין תדלוקים. התחל בהזנת תדלוק חדש!</p>
+                            ) : (
+                                <ul className="space-y-3">
+                                    {fuelEntries.map((entry) => (
+                                        <li key={entry.id} className="bg-gray-50 p-4 rounded-lg shadow-sm border border-gray-200">
+                                            <p className="text-gray-700 font-semibold">תאריך: {entry.timestamp ? new Date(entry.timestamp.seconds * 1000).toLocaleString('he-IL') : 'N/A'}</p>
+                                            <p className="text-gray-600">מד מרחק: <span className="font-medium">{entry.odometer} ק"מ</span></p>
+                                            <p className="text-gray-600">ליטרים: <span className="font-medium">{entry.liters.toFixed(2)}</span></p>
+                                            <p className="text-gray-600">עלות: <span className="font-medium">{entry.cost.toFixed(2)} ש"ח</span></p>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                    )}
+                    
+                    {currentPage === 'settings' && (
+                        <div className="animate-fade-in">
+                            <h2 className="text-2xl font-semibold text-gray-800 mb-5 text-center">הגדרות</h2>
+                            <div className="bg-blue-50 p-4 rounded-lg shadow-sm">
+                                <p className="text-gray-700 mb-2">כאן תוכל להוסיף הגדרות עתידיות, לדוגמה:</p>
+                                <ul className="list-disc list-inside text-gray-600 space-y-1">
+                                    <li>תיקון נתוני זיהוי תמונה (OCR)</li>
+                                    <li>הגדרות יחידות מידה</li>
+                                    <li>ניהול רכבים מרובים</li>
+                                </ul>
+                                <p className="mt-4 text-gray-500 text-sm">(פונקציונליות זו תפותח בעתיד)</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
         );
-    }
+    };
 
-    return (
-        <div dir="rtl" className="min-h-screen bg-gray-100 flex flex-col items-center p-4 font-inter">
-            <style>
-                {`
-                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-                body { font-family: 'Inter', sans-serif; }
-                .input-field {
-                    @apply w-full p-3 mb-4 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 text-right;
-                }
-                .btn-primary {
-                    @apply w-full bg-blue-600 text-white py-3 px-4 rounded-lg shadow-md hover:bg-blue-700 transition duration-300 ease-in-out font-semibold;
-                }
-                .btn-secondary {
-                    @apply w-full bg-gray-200 text-gray-800 py-3 px-4 rounded-lg shadow-md hover:bg-gray-300 transition duration-300 ease-in-out font-semibold;
-                }
-                .nav-btn {
-                    @apply flex-1 py-3 text-center font-semibold rounded-lg transition duration-300 ease-in-out;
-                }
-                .nav-btn.active {
-                    @apply bg-blue-600 text-white shadow-md;
-                }
-                .nav-btn:not(.active) {
-                    @apply bg-gray-200 text-gray-700 hover:bg-gray-300;
-                }
-                `}
-            </style>
-
-            <div className="w-full max-w-md bg-white rounded-xl shadow-lg p-6 mb-6">
-                <h1 className="text-3xl font-bold text-center text-blue-700 mb-6">FuelTracker IL</h1>
-                {userId && (
-                    <p className="text-sm text-center text-gray-500 mb-4 break-words">
-                        מזהה משתמש: <span className="font-mono text-xs">{userId}</span>
-                    </p>
-                )}
-
-                {message && (
-                    <div className={`p-3 mb-4 rounded-lg text-center ${message.includes('שגיאה') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                        {message}
-                    </div>
-                )}
-
-                {/* Navigation */}
-                <div className="flex justify-around bg-gray-100 rounded-lg p-2 mb-6 shadow-inner">
-                    <button
-                        className={`nav-btn ${currentPage === 'entry' ? 'active' : ''}`}
-                        onClick={() => setCurrentPage('entry')}
-                    >
-                        הזנת דלק
-                    </button>
-                    <button
-                        className={`nav-btn ${currentPage === 'statistics' ? 'active' : ''}`}
-                        onClick={() => setCurrentPage('statistics')}
-                    >
-                        סטטיסטיקות
-                    </button>
-                    <button
-                        className={`nav-btn ${currentPage === 'settings' ? 'active' : ''}`}
-                        onClick={() => setCurrentPage('settings')}
-                    >
-                        הגדרות
-                    </button>
-                </div>
-
-                {/* Fuel-Up Entry Screen */}
-                {currentPage === 'entry' && (
-                    <div className="animate-fade-in">
-                        <h2 className="text-2xl font-semibold text-gray-800 mb-5 text-center">הזנת תדלוק חדש</h2>
-                        <div className="mb-4">
-                            <label htmlFor="odometer" className="block text-gray-700 text-sm font-medium mb-2">
-                                קריאת מד מרחק (ק"מ)
-                            </label>
-                            <input
-                                type="number"
-                                id="odometer"
-                                className="input-field"
-                                value={odometer}
-                                onChange={(e) => setOdometer(e.target.value)}
-                                placeholder="לדוגמה: 123456"
-                                min="0"
-                            />
-                            <button
-                                onClick={() => simulateOcr('odometer')}
-                                className="btn-secondary text-sm mb-4"
-                            >
-                                סרוק תמונת מד מרחק (סימולציה)
-                            </button>
-                        </div>
-
-                        <div className="mb-4">
-                            <label htmlFor="liters" className="block text-gray-700 text-sm font-medium mb-2">
-                                כמות דלק (ליטרים)
-                            </label>
-                            <input
-                                type="number"
-                                id="liters"
-                                className="input-field"
-                                value={liters}
-                                onChange={(e) => setLiters(e.target.value)}
-                                placeholder="לדוגמה: 45.50"
-                                step="0.01"
-                                min="0"
-                            />
-                        </div>
-
-                        <div className="mb-6">
-                            <label htmlFor="cost" className="block text-gray-700 text-sm font-medium mb-2">
-                                עלות כוללת (ש"ח)
-                            </label>
-                            <input
-                                type="number"
-                                id="cost"
-                                className="input-field"
-                                value={cost}
-                                onChange={(e) => setCost(e.target.value)}
-                                placeholder="לדוגמה: 320.75"
-                                step="0.01"
-                                min="0"
-                            />
-                            <button
-                                onClick={() => simulateOcr('pump')}
-                                className="btn-secondary text-sm"
-                            >
-                                סרוק תמונת משאבה (סימולציה)
-                            </button>
-                        </div>
-
-                        <button onClick={handleSaveEntry} className="btn-primary">
-                            שמור תדלוק
-                        </button>
-                    </div>
-                )}
-
-                {/* Statistics Screen */}
-                {currentPage === 'statistics' && (
-                    <div className="animate-fade-in">
-                        <h2 className="text-2xl font-semibold text-gray-800 mb-5 text-center">סטטיסטיקות צריכת דלק</h2>
-                        <div className="bg-blue-50 p-4 rounded-lg mb-4 shadow-sm">
-                            <p className="text-lg font-medium text-blue-800 mb-2">
-                                צריכה ממוצעת: <span className="font-bold">{stats.avgConsumption}</span>
-                            </p>
-                            <p className="text-lg font-medium text-blue-800 mb-2">
-                                עלות כוללת: <span className="font-bold">{stats.totalCost}</span>
-                            </p>
-                            <p className="text-lg font-medium text-blue-800">
-                                עלות לק"מ: <span className="font-bold">{stats.costPerKm}</span>
-                            </p>
-                        </div>
-
-                        <h3 className="text-xl font-semibold text-gray-800 mb-3">סיכום חודשי</h3>
-                        {Object.keys(stats.monthlySummary).length === 0 ? (
-                            <p className="text-gray-600 text-center">אין מספיק נתונים לסיכום חודשי.</p>
-                        ) : (
-                            <div className="space-y-4">
-                                {Object.keys(stats.monthlySummary).sort().map(monthYear => (
-                                    <div key={monthYear} className="bg-gray-50 p-4 rounded-lg shadow-sm border border-gray-200">
-                                        <h4 className="text-lg font-semibold text-gray-700 mb-2">
-                                            {new Date(monthYear).toLocaleString('he-IL', { month: 'long', year: 'numeric' })}
-                                        </h4>
-                                        <p className="text-gray-600">
-                                            ליטרים: <span className="font-medium">{stats.monthlySummary[monthYear].liters.toFixed(2)}</span>
-                                        </p>
-                                        <p className="text-gray-600">
-                                            עלות: <span className="font-medium">{stats.monthlySummary[monthYear].cost.toFixed(2)} ש"ח</span>
-                                        </p>
-                                        <p className="text-gray-600">
-                                            מרחק נסוע: <span className="font-medium">{stats.monthlySummary[monthYear].distance.toFixed(2)} ק"מ</span>
-                                        </p>
-                                        {/* Placeholder for a simple graph/trend indicator */}
-                                        <div className="mt-2 text-sm text-gray-500">
-                                            {stats.monthlySummary[monthYear].entries.length > 0 && (
-                                                <p>({stats.monthlySummary[monthYear].entries.length} תדלוקים בחודש זה)</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        <h3 className="text-xl font-semibold text-gray-800 mt-6 mb-3">היסטוריית תדלוקים</h3>
-                        {fuelEntries.length === 0 ? (
-                            <p className="text-gray-600 text-center">עדיין אין תדלוקים. התחל בהזנת תדלוק חדש!</p>
-                        ) : (
-                            <ul className="space-y-3">
-                                {fuelEntries.map((entry) => (
-                                    <li key={entry.id} className="bg-gray-50 p-4 rounded-lg shadow-sm border border-gray-200">
-                                        <p className="text-gray-700 font-semibold">
-                                            תאריך: {new Date(entry.timestamp).toLocaleString('he-IL')}
-                                        </p>
-                                        <p className="text-gray-600">
-                                            מד מרחק: <span className="font-medium">{entry.odometer} ק"מ</span>
-                                        </p>
-                                        <p className="text-gray-600">
-                                            ליטרים: <span className="font-medium">{entry.liters.toFixed(2)}</span>
-                                        </p>
-                                        <p className="text-gray-600">
-                                            עלות: <span className="font-medium">{entry.cost.toFixed(2)} ש"ח</span>
-                                        </p>
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
-                    </div>
-                )}
-
-                {/* Settings Screen */}
-                {currentPage === 'settings' && (
-                    <div className="animate-fade-in">
-                        <h2 className="text-2xl font-semibold text-gray-800 mb-5 text-center">הגדרות</h2>
-                        <div className="bg-blue-50 p-4 rounded-lg shadow-sm">
-                            <p className="text-gray-700 mb-2">
-                                כאן תוכל להוסיף הגדרות עתידיות, לדוגמה:
-                            </p>
-                            <ul className="list-disc list-inside text-gray-600 space-y-1">
-                                <li>תיקון נתוני זיהוי תמונה (OCR)</li>
-                                <li>הגדרות יחידות מידה</li>
-                                <li>ניהול רכבים מרובים</li>
-                            </ul>
-                            <p className="mt-4 text-gray-500 text-sm">
-                                (פונקציונליות זו תפותח בעתיד)
-                            </p>
-                        </div>
-                    </div>
-                )}
-            </div>
-        </div>
+    ReactDOM.render(
+        <App />,
+        document.getElementById('root')
     );
-};
+</script>
 
-export default App;
+</body>
+</html>
